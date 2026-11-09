@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Review queue{% endblock %}
+{% block body %}
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+  <h2 style="margin:0;font-size:18px">{{ status|capitalize }} items</h2>
+  {% if status == "pending" %}<a class="btn primary" href="/review/next">Start reviewing →</a>{% endif %}
+</div>
+{% if not items %}
+  <div class="card muted">Nothing here. {% if status == "pending" %}The queue is empty.{% endif %}</div>
+{% else %}
+<div class="card wrap" style="padding:0">
+<table>
+  <tr><th>#</th><th>Message</th><th>Suggested</th><th>Why review</th><th>{% if status == "resolved" %}Final{% else %}Waiting since{% endif %}</th></tr>
+  {% for it in items %}
+  <tr>
+    <td><a href="/review/{{ it.id }}">{{ it.id }}</a></td>
+    <td style="max-width:380px;word-break:break-word">{{ it.text }}</td>
+    <td><span class="pill sev{{ it.suggested_severity or 0 }}">{{ it.suggested_label }} · {{ it.suggested_severity }}</span>
+        <div class="small muted">conf {{ '%.2f'|format(it.suggested_conf or 0) }}</div></td>
+    <td class="small">{{ it.reason }}</td>
+    <td class="small">{% if status == "resolved" %}<span class="pill sev{{ it.final_severity or 0 }}">{{ it.final_label }} · {{ it.final_action }}</span><div class="muted">{{ it.reviewer }}</div>{% else %}{{ it.created_at }}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,62 @@
+# Default configuration for the chatmod pipeline.
+# Every threshold here is meant to be tuned with `chatmod sweep` / `chatmod eval`.
+
+policy_path: policy/policy.md
+
+tier1:
+  scorer: detoxify            # detoxify | keyword (offline fallback, no torch needed)
+  detoxify_model: unbiased    # unbiased | original | original-small | multilingual
+  # Chosen by `chatmod sweep --dataset seed` (2026-11-10, detoxify-unbiased): settles ~56% of
+  # the adversarial seed set with 3.3% settled error and 0% benign blocked. Real chat is
+  # mostly benign, so the live settle rate will be much higher. Re-sweep on real traffic.
+  low_thr: 0.30               # all toxicity heads below this AND no rules/hints -> allow
+  high_thr: 0.95              # a targeted toxicity head at/above this -> settle as violation
+  scam_strong: 3.0            # rule score at/above this -> settle as scam_spam
+  scam_escalate: 1.0          # rule score at/above this (but < scam_strong) -> escalate to LLM
+  # Risk rules (self-harm / threat phrases) always escalate, whatever the scores.
+
+tier2:
+  provider: gemini            # gemini | fake
+  # Google recommends 3.8 Flash / 3.5 Flash-Lite for new projects (2.5 Flash is restricted to
+  # existing users as of 2026-09). Flash-Lite is worth comparing via `chatmod eval`.
+  model: gemini-3.8-flash
+  temperature: 0.0
+  # Thinking tokens count against max_output_tokens. With 400 tokens and default thinking,
+  # ~30% of verdicts came back truncated (run 20261110-024023).
+  thinking_level: low         # Gemini 3: minimal | low | medium | high; null = use thinking_budget
+  thinking_budget: null       # older models only; ignored when thinking_level is set
+  max_output_tokens: 2048
+  # Default Gemini safety filters can return an EMPTY response for hateful/sexual input,
+  # exactly what a moderation judge must read. BLOCK_NONE for the 4 text harm categories;
+  # null keeps Google's defaults.
+  safety_threshold: BLOCK_NONE
+  timeout_s: 8.0              # per attempt, live serving
+  eval_timeout_s: 30.0        # per attempt, evals (latency doesn't matter, completeness does)
+  max_concurrency: 8
+  # Rate limits. Set rpm_limit to your project's requests/minute for the model, as shown
+  # at https://ai.dev/rate-limit (free tier for gemini-3.8-flash was 5 RPM / 20 per day
+  # on 2026-11-10). 0 disables client-side pacing.
+  rpm_limit: 500
+  max_retries: 3
+  live_max_wait_s: 2.0        # serving: longer waits fall back to soft-hide + human review
+  eval_max_wait_s: 120.0      # evals: wait out per-minute limits (server sends retryDelay)
+  conf_thr: 0.70              # LLM confidence below this -> human review
+  always_review: [self_harm, threat_violence]
+  cache_path: .cache/llm_cache.sqlite
+  # USD per 1M tokens, used only for cost estimates in eval reports.
+  # PLACEHOLDERS: set from the current Gemini pricing page for the chosen model.
+  price_in_per_m: 0.30
+  price_out_per_m: 2.50
+
+tier3:
+  db_path: .cache/review_queue.sqlite
+
+# (label, severity) -> action. Severity: 0 none, 1 low, 2 medium, 3 high.
+actions:
+  benign:          [allow, allow, allow, allow]
+  scam_spam:       [allow, hide, block, block]
+  harassment:      [allow, warn, hide, block]
+  hate:            [allow, hide, block, block]
+  sexual:          [allow, warn, hide, block]
+  threat_violence: [allow, hide, block, block]
+  self_harm:       [allow, hide, hide, hide]   # hidden from chat, routed to support, never punitive

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Playground{% endblock %}
+{% block body %}
+<form class="card" id="f">
+  <b>Try a message</b>
+  <textarea id="t" class="btn" style="width:100%;min-height:70px;margin:10px 0" placeholder="type a chat message…"></textarea>
+  <button class="btn primary">Moderate</button>
+</form>
+<div id="out"></div>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = document.getElementById('t').value.trim(); if (!text) return;
+  const out = document.getElementById('out');
+  out.innerHTML = '<div class="card muted">…</div>';
+  try {
+    const r = await fetch('/moderate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(d));
+    out.innerHTML = `<div class="card">
+      <div class="msg">${esc(d.text)}</div>
+      <p><span class="pill sev${d.severity}">${esc(d.label)} · severity ${d.severity}</span>
+         <b>${esc(d.action)}</b> · settled at <b>${esc(d.route)}</b> · conf ${d.confidence.toFixed(2)} · ${d.latency_ms.toFixed(1)} ms
+         ${d.review_id ? ` · <a href="/review/${d.review_id}">review #${d.review_id}</a>` : ''}</p>
+      ${d.rationale ? `<p>${esc(d.rationale)}</p>` : ''}
+      ${d.user_message ? `<p class="small muted">To user: “${esc(d.user_message)}”</p>` : ''}
+      <details class="small"><summary>raw</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(d, null, 2))}</pre></details>
+    </div>` + out.innerHTML.replace('<div class="card muted">…</div>', '');
+  } catch (err) { out.innerHTML = `<div class="card">Error: ${esc(err.message)}</div>`; }
+});
+</script>
+{% endblock %}

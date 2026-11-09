@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Review #{{ item.id }}{% endblock %}
+{% block body %}
+<div class="small muted" style="margin-bottom:8px"><a href="/review">← queue</a> · item #{{ item.id }} · {{ item.status }}{% if item.reviewer %} by {{ item.reviewer }}{% endif %} · queued {{ item.created_at }}</div>
+
+{% if context %}
+<div class="card small"><div class="muted" style="margin-bottom:4px">Recent chat</div>{% for c in context %}<div>{{ c }}</div>{% endfor %}</div>
+{% endif %}
+
+<div class="card">
+  <div class="msg">{{ item.text }}</div>
+  <div class="small muted" style="margin-top:8px">Sent for review because: <b>{{ item.reason }}</b> · shown to viewers as: <b>{{ item.provisional_action }}</b> while pending</div>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <b>LLM suggestion</b>
+    <span class="pill sev{{ item.suggested_severity or 0 }}">{{ item.suggested_label }} · severity {{ item.suggested_severity }}</span>
+    <span class="small muted">confidence {{ '%.2f'|format(item.suggested_conf or 0) }}</span>
+  </div>
+  {% if d.rationale %}<p>{{ d.rationale }}</p>{% endif %}
+  {% if d.user_message %}<p class="small muted">Message to user: “{{ d.user_message }}”</p>{% endif %}
+  {% if d.tier1 %}
+  <details class="small"><summary>Tier 1 signals</summary>
+    <div>Rules: {{ d.tier1.rule_hits|join(', ') or 'none' }} (score {{ d.tier1.rule_score }})</div>
+    <div>Toxicity: {% for k, v in d.tier1.tox_scores.items() %}{{ k }} {{ '%.2f'|format(v) }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    <div>Note: {{ d.tier1.reason }}</div>
+  </details>
+  {% endif %}
+</div>
+
+{% if item.status != "resolved" %}
+<form class="card" method="post" action="/review/{{ item.id }}/resolve" id="f">
+  <div style="margin-bottom:10px"><b>Label</b> <span class="small muted">keys 1–7</span></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+    {% for l in labels %}
+    <label class="btn"><input type="radio" name="label" value="{{ l }}" {% if l == item.suggested_label %}checked{% endif %}> {{ l }} <kbd>{{ loop.index }}</kbd></label>
+    {% endfor %}
+  </div>
+  <div style="margin-bottom:10px"><b>Severity</b> <span class="small muted">keys q w e r = 0 1 2 3</span></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+    {% for s in [0,1,2,3] %}
+    <label class="btn"><input type="radio" name="severity" value="{{ s }}" {% if s == item.suggested_severity %}checked{% endif %}> {{ s }}</label>
+    {% endfor %}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <b>Action</b>
+    <select name="action" class="btn"><option value="">from policy table</option>{% for a in actions %}<option value="{{ a }}">{{ a }}</option>{% endfor %}</select>
+    <input name="reviewer" class="btn" value="{{ item.reviewer or 'reviewer' }}" placeholder="reviewer" style="width:140px">
+  </div>
+  <textarea name="notes" class="btn" style="width:100%;min-height:50px" placeholder="notes (optional)"></textarea>
+  <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <button class="btn primary" type="submit">Resolve &amp; next <kbd>Enter</kbd></button>
+    <button class="btn" type="submit" formaction="/review/{{ item.id }}/release">Release</button>
+  </div>
+</form>
+{% else %}
+<div class="card">Resolved by <b>{{ item.reviewer }}</b>: <span class="pill sev{{ item.final_severity or 0 }}">{{ item.final_label }} · {{ item.final_severity }} · {{ item.final_action }}</span> {% if item.notes %}<p class="small">{{ item.notes }}</p>{% endif %}</div>
+{% endif %}
+
+<details class="card small"><summary>Policy</summary><pre style="white-space:pre-wrap">{{ policy }}</pre></details>
+
+<script>
+(function(){
+  const f = document.getElementById('f'); if (!f) return;
+  const labels = f.querySelectorAll('input[name=label]');
+  const sevs = f.querySelectorAll('input[name=severity]');
+  document.addEventListener('keydown', e => {
+    if (['TEXTAREA','INPUT','SELECT'].includes(e.target.tagName) && e.target.type !== 'radio') return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= labels.length) { labels[n-1].checked = true; if (labels[n-1].value === 'benign') sevs[0].checked = true; }
+    const si = 'qwer'.indexOf(e.key); if (si >= 0) sevs[si].checked = true;
+    if (e.key === 'Enter') { e.preventDefault(); f.submit(); }
+  });
+})();
+</script>
+{% endblock %}
